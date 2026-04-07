@@ -272,18 +272,14 @@ def train(config_path="training/config.yaml"):
     hidden = tuple(t_cfg["hidden_sizes"])
     policy = TeacherPolicy(obs_dim, act_dim, hidden_sizes=hidden).to(device)
     value_fn = TeacherValueFn(obs_dim, priv_dim, hidden_sizes=hidden).to(device)
-    print("1")
     # Optimizers
     pi_optimizer = torch.optim.Adam(policy.parameters(), lr=t_cfg["lr_actor"])
     vf_optimizer = torch.optim.Adam(value_fn.parameters(), lr=t_cfg["lr_critic"])
-    print("2")
     
     obs_rms = RunningMeanStd(shape=(obs_dim,))
-    print("3")
 
     save_dir = Path(t_cfg["save_dir"])
     save_dir.mkdir(parents=True, exist_ok=True)
-    print("4")
 
     total_steps = 0
     best_reward = -np.inf
@@ -291,7 +287,6 @@ def train(config_path="training/config.yaml"):
     # Main Loop
     for it in range(1, t_cfg["iterations"] + 1):
         t0 = time.time()
-        print("5")
 
         batch, stats, steps_collected = collect_rollouts(
             env, policy, value_fn,
@@ -301,7 +296,6 @@ def train(config_path="training/config.yaml"):
             device=device,
             obs_rms=obs_rms
         )
-        print("6")
         total_steps += steps_collected
 
         info = ppo_update(

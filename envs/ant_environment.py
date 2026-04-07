@@ -401,10 +401,8 @@ class VelocityAntEnv(gym.Wrapper):
         return self._append_cmd(obs), info
     
     def step(self, action):
-        print("10")
         self._action_buffer.append(np.asarray(action, dtype=np.float32).copy())
         command = self._action_buffer[0]
-        print("11")
         
         filtered = (self.ACTION_FILTER_ALPHA * command
                     + (1.0 - self.ACTION_FILTER_ALPHA) * self._prev_action)
