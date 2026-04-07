@@ -104,7 +104,7 @@ def collect_rollouts(env, policy, value_fn, batch_size, gamma, lam, device,
         done = np.logical_or(terminated,truncated)
 
         obs_actor_buf.append(obs_norm.copy())
-        obs_priv_buf.append(priv_raw.copy()) 
+        obs_priv_buf.append(priv_raw.astype(np.float32).copy()) 
         action_buf.append(action_np.copy()) # Store unclipped so log probs stay consistent
         rewards_buf.append(reward.astype(np.float32))
         dones_buf.append(done.astype(np.float32))

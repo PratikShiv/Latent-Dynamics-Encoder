@@ -15,8 +15,6 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 import os
-import pybullet as p
-import pybullet_data
 
 from .dynamics_config import DynamicsConfig
 
@@ -413,7 +411,7 @@ class VelocityAntEnv(gym.Wrapper):
         
         # Perdiodically resample and apply external force
         self._force_step_counter += 1
-        if self._force_step_counter % self.dyn.cfg.force_resample_interval == 0:
+        if self._force_step_counter % self.dyn_cfg.force_resample_interval == 0:
             self._sample_external_force()
         self._apply_extrnal_force()
 

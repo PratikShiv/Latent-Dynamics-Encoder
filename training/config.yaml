@@ -1,5 +1,5 @@
 env:
-  num_envs: 3
+  num_envs: 8
   max_episode_steps: 1000
   cmd_vx_range: [0.0, 0.0]        # No Lateral velocity
   cmd_vy_range: [0.0, 1.5]
