@@ -1,0 +1,29 @@
+env:
+  num_envs: 3
+  max_episode_steps: 1000
+  cmd_vx_range: [0.0, 0.0]        # No Lateral velocity
+  cmd_vy_range: [0.0, 1.5]
+  cmd_yaw_rate_range: [0.0, 0.0]  # No yaw.
+  dynamics:
+    friction_range: [0.3, 1.5]
+    mass_scale_range: [0.7, 1.4]
+    action_delay_range: [0, 6]        # In simulation steps
+    obs_delay_range: [0, 3]           # In simulation steps
+    external_force_range: [0.0, 3.0]  # Newtons
+
+teacher:
+  hidden_sizes: [256, 256]
+  lr_actor: 3.0e-4
+  lr_critic: 1.0e-3
+  gamma: 0.99
+  lam: 0.97
+  clip_ratio: 0.2
+  entropy_coeff: 0.01
+  batch_size: 24576
+  minibatch_size: 4096
+  update_epochs: 10
+  iterations: 2000
+  max_grad_norm: 0.5
+  seed: 42
+  save_dir: results
+
