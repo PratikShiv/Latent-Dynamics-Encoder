@@ -65,13 +65,13 @@ class VelocityAntEnv(gym.Wrapper):
     W_LATERAL = 0.0
     W_YAW = 0.0
     W_VZ = 0.2
-    W_HEIGHT = 0.1
-    W_ORIENT = 0.1
+    W_HEIGHT = 0.3
+    W_ORIENT = 0.3
     W_ENERGY_TORQUE = 0.003
     W_ENERGY_JVEL = 0.0003
-    W_SMOOTH = 0.04
+    W_SMOOTH = 0.02
     W_SYMMETRY = 0.8
-    W_ALIVE = 0.1
+    W_ALIVE = 0.2
     W_STAND_PENALTY=20.0
 
     ACTION_FILTER_ALPHA=0.5
@@ -320,7 +320,7 @@ class VelocityAntEnv(gym.Wrapper):
         body_vx, body_vy = self._body_frame_velocity(obs)
 
         # 1. Velocity Tracking.
-        r_forward = self.W_FORWARD * np.exp(-4.0 * (body_vx - self._cmd_vx) ** 2)
+        r_forward = self.W_FORWARD * np.exp(-1.0 * (body_vx - self._cmd_vx) ** 2)
         r_lateral = self.W_LATERAL * np.exp(-8.0 * (body_vy - self._cmd_vy) ** 2)
         r_yaw     = self.W_YAW     * np.exp(-8.0 * (wz - self._cmd_yaw_rate) ** 2)
         r_vz = -self.W_VZ * vz ** 2 
@@ -399,6 +399,9 @@ class VelocityAntEnv(gym.Wrapper):
         obs, info = self.env.reset(**kwargs)
         self._prev_action = np.zeros(self.action_space.shape[0], dtype=np.float32)
         self._step_count = 0
+        self._episode_return = 0.0
+        self._force_step_counter = 0.0
+        self._ext_force = np.zeros(3, dtype=np.float32)
         self._reward_terms = []
 
         obs = obs.astype(np.float32)
