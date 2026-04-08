@@ -47,7 +47,7 @@ class RunningMeanStd:
 
     def normalize(self, x):
         return np.clip(
-            (x - self. mean.astype(np.float32)) / (np.sqrt(self.var).astype(np.float32) + 1e-8),
+            (x - self.mean.astype(np.float32)) / (np.sqrt(self.var).astype(np.float32) + 1e-8),
             -self.clip,
             self.clip,
         )
@@ -135,7 +135,7 @@ def ppo_update(policy, value_fn, batch, *,
     total_clipfrac = 0.0
     n_updates = 0.0
 
-    for _epochs in update_epochs:
+    for _epochs in range(update_epochs):
         indices = torch.randperm(N, device=device)
 
         for start in range(0, N, minibatch_size):
@@ -152,9 +152,9 @@ def ppo_update(policy, value_fn, batch, *,
             if mode == PPOMode.STUDENT:
                 new_lp, entropy = policy.evaluate(mb_obs, mb_policy_extra, mb_act)
             else:
-                new_lp, entropy = policy.evalute(mb_obs, mb_act)
+                new_lp, entropy = policy.evaluate(mb_obs, mb_act)
 
-            ratio = (new_lp - old_lp).exp()
+            ratio = (new_lp - mb_old_lp).exp()
             surr1 = ratio * mb_adv
             surr2 = ratio.clamp(1 - clip_ratio, 1 + clip_ratio) * mb_adv
             pi_loss = -torch.min(surr1, surr2).mean()

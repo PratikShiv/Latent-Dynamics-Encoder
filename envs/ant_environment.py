@@ -27,7 +27,7 @@ def quat_to_rpy(quat):
     Converts Quaternion (w, x, y, z) -> (roll, pitch, yaw) in radians.
     """
     w, x, y, z = quat
-    sinr = 2.0 * (w*x + y*x)
+    sinr = 2.0 * (w*x + y*z)
     cosr = 1.0 - 2.0*(x*x + y*y)
     roll = np.arctan2(sinr, cosr)
     
@@ -61,18 +61,18 @@ class VelocityAntEnv(gym.Wrapper):
 
     # --------------------------------------------------------------------------------
     # Reward Weights.
-    W_FORWARD = 3.0
-    W_LATERAL = 3.0
-    W_YAW = 1.0
+    W_FORWARD = 5.0
+    W_LATERAL = 0.0
+    W_YAW = 0.0
     W_VZ = 0.2
-    W_HEIGHT = 0.3
-    W_ORIENT = 0.3
+    W_HEIGHT = 0.1
+    W_ORIENT = 0.1
     W_ENERGY_TORQUE = 0.003
     W_ENERGY_JVEL = 0.0003
     W_SMOOTH = 0.04
-    W_SYMMETRY = 0.03
-    W_ALIVE = 0.2
-    W_STAND_PENALTY=0.8
+    W_SYMMETRY = 0.8
+    W_ALIVE = 0.1
+    W_STAND_PENALTY=20.0
 
     ACTION_FILTER_ALPHA=0.5
 
@@ -157,6 +157,7 @@ class VelocityAntEnv(gym.Wrapper):
         self._prev_action = np.zeros(self.action_space.shape[0], dtype=np.float32)
         self._step_count = 0
         self._episode_return = 0.0
+        self._reward_terms = []
 
 
     # --------------------------------------------------------------------------------
@@ -322,7 +323,7 @@ class VelocityAntEnv(gym.Wrapper):
         r_forward = self.W_FORWARD * np.exp(-4.0 * (body_vx - self._cmd_vx) ** 2)
         r_lateral = self.W_LATERAL * np.exp(-8.0 * (body_vy - self._cmd_vy) ** 2)
         r_yaw     = self.W_YAW     * np.exp(-8.0 * (wz - self._cmd_yaw_rate) ** 2)
-        r_vz = self.W_VZ * vz ** 2 
+        r_vz = -self.W_VZ * vz ** 2 
 
         # 2. Posture
         r_height = self.W_HEIGHT *  np.exp(-40.0 * (z - self.TARGET_HEIGHT) **2)
@@ -335,7 +336,7 @@ class VelocityAntEnv(gym.Wrapper):
         )
 
         # 4. Action Smoothness (Penalise Jerks)
-        r_smooth = -self.W_SMOOTH * np.sum((action * self._prev_action) **2)
+        r_smooth = -self.W_SMOOTH * np.sum((action - self._prev_action) **2)
 
         # 5. Gait Symmetry: All 4 legs should share work evenly.
         #       Leg activity = |hip_vel| + |ankle_vel| per leg
@@ -353,25 +354,39 @@ class VelocityAntEnv(gym.Wrapper):
 
         # 7. Stand Penalty
         speed_xy = np.sqrt(body_vx**2 + body_vy**2)
-        r_stand = -self.W_STAND_PENALTY * np.exp(-10.0 * speed_xy)
-
+        # r_stand = -self.W_STAND_PENALTY * np.exp(-10.0 * speed_xy)
+        r_stand = 0.0
 
         # Final Reward
-        reward = (
-            r_forward
-            + r_lateral
-            + r_vz
-            + r_yaw
-            + r_height
-            + r_orient
-            + r_energy
-            + r_smooth
-            + r_symmetry
-            + r_alive
-            + r_stand
-        )
+        terms = {
+            "r_forward": r_forward,
+            "r_lateral": r_lateral,
+            "r_vz": r_vz,
+            "r_yaw": r_yaw,
+            "r_height": r_height,
+            "r_orient": r_orient,
+            "r_energy": r_energy,
+            "r_smooth": r_smooth,
+            "r_symmetry": r_symmetry,
+            "r_alive": r_alive,
+            "r_stand": r_stand,
+        }
+        total = sum([float(v) for v in terms.values()])
+        terms["total_reward"] = total
+        self._reward_terms.append(terms)
 
-        return float(reward)
+        return float(total)
+    
+    # --------------------------------------------------------------------------------
+    # Reward Terms
+    def _get_reward_terms(self):
+        # Return per term episode means from accumulated step data
+        if not self._reward_terms:
+            return {}
+
+        keys = self._reward_terms[0].keys()
+        output = {k: float(np.mean([t[k] for t in self._reward_terms])) for k in keys}
+        return output   
     
     # --------------------------------------------------------------------------------
     # --------------------------------------------------------------------------------
@@ -384,6 +399,7 @@ class VelocityAntEnv(gym.Wrapper):
         obs, info = self.env.reset(**kwargs)
         self._prev_action = np.zeros(self.action_space.shape[0], dtype=np.float32)
         self._step_count = 0
+        self._reward_terms = []
 
         obs = obs.astype(np.float32)
         self._reset_delay_buffer(obs)
@@ -428,6 +444,7 @@ class VelocityAntEnv(gym.Wrapper):
 
         obs = obs.astype(np.float32)
         self._obs_buffer.append(obs.copy())
+        delayed_obs = self._obs_buffer[0]
 
         body_vx, body_vy = self._body_frame_velocity(obs)
         wz = obs[18]
@@ -454,6 +471,7 @@ class VelocityAntEnv(gym.Wrapper):
             info["episode_return"] = self._episode_return
             info["episode_length"] = self._step_count
             info["survived"] = not terminated
+            info["episode_reward_terms"] = self._get_reward_terms()
 
-        return self._append_cmd(obs), reward, terminated, truncated, info
+        return self._append_cmd(delayed_obs), reward, terminated, truncated, info
     

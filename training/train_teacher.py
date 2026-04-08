@@ -73,8 +73,13 @@ def collect_rollouts(env, policy, value_fn, batch_size, gamma, lam, device,
     rewards_buf, dones_buf, log_probs_buf, values_buf = [], [], [], []
     raw_obs_buffer = []
 
+    REWARD_TERM_KEYS = [
+        "r_forward", "r_lateral", "r_vz", "r_yaw", "r_height", "r_orient", "r_energy",
+        "r_smooth", "r_symmetry", "r_alive", "r_stand", "total_reward"]
+
     ep_returns, ep_lengths = [], []
     ep_velocities, ep_energies, ep_survivals = [], [], []
+    ep_reward_terms = {k: [] for k in REWARD_TERM_KEYS}
     
     obs_raw, infos = env.reset()
     priv_raw = np.stack(infos["privileged_obs"])
@@ -132,6 +137,15 @@ def collect_rollouts(env, policy, value_fn, batch_size, gamma, lam, device,
             ep_energies.append(mean_eng)
             survived = not terminated[idx] if hasattr(terminated, '__getitem__') else not terminated
             ep_survivals.append(float(survived))
+
+            # Append Reward terms
+            if "episode_reward_terms" in infos:
+                ert = infos["episode_reward_terms"]
+                for rk in REWARD_TERM_KEYS:
+                    if isinstance(ert, dict):
+                        ep_reward_terms[rk].append(float(np.asarray(ert.get(rk, 0.0)).item()))
+                    else:
+                        ep_reward_terms[rk].append(float(ert[idx].get(rk, 0.0)))
 
             ep_ret[idx] = 0.0
             ep_len[idx] = 0.0
@@ -192,6 +206,10 @@ def collect_rollouts(env, policy, value_fn, batch_size, gamma, lam, device,
         "num_episodes": len(ep_returns),
     }
 
+    for rk in REWARD_TERM_KEYS:
+        vals = ep_reward_terms[rk]
+        stats[rk] = float(np.mean(vals)) if vals else 0.0
+
     return batch, stats, total_steps
 
 
@@ -224,14 +242,15 @@ def train(config_path="training/config.yaml"):
     e_cfg = cfg["env"]
     d_cfg = e_cfg["dynamics"]
 
-    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # device = "cuda" if torch.cuda.is_available() else "cpu"
+    device= "cpu"
     print(f"Device: {device}")
 
     seed = t_cfg["seed"]
     np.random.seed(seed)
     torch.manual_seed(seed)
 
-    # _init_wandb()
+    _init_wandb()
 
     dyn_config = DynamicsConfig(
         friction_range = tuple(d_cfg["friction_range"]),
@@ -332,6 +351,19 @@ def train(config_path="training/config.yaml"):
                 "vf_loss": info["vf_loss"],
                 "entropy": info["entropy"],
                 "clipfrac": info["clipfrac"],
+
+                "reward/r_forward": stats["r_forward"],
+                "reward/r_lateral": stats["r_lateral"],
+                "reward/r_vz": stats["r_vz"],
+                "reward/r_yaw": stats["r_yaw"],
+                "reward/r_height": stats["r_height"],
+                "reward/r_orient": stats["r_orient"],
+                "reward/r_energy": stats["r_energy"],
+                "reward/r_smooth": stats["r_smooth"],
+                "reward/r_symmetry": stats["r_symmetry"],
+                "reward/r_alive": stats["r_alive"],
+                "reward/r_stand": stats["r_stand"],
+                "reward/total_reward": stats["total_reward"],
                 
                 "timing/iter_seconds": dt,
             },
