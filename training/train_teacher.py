@@ -78,7 +78,7 @@ def collect_rollouts(env, policy, value_fn, batch_size, gamma, lam, device,
         "r_smooth", "r_symmetry", "r_alive", "r_stand", "total_reward"]
 
     ep_returns, ep_lengths = [], []
-    ep_velocities, ep_energies, ep_survivals = [], [], []
+    ep_velocities_x, ep_velocities_y, ep_energies, ep_survivals = [], [], [], []
     ep_reward_terms = {k: [] for k in REWARD_TERM_KEYS}
     
     obs_raw, infos = env.reset()
@@ -86,7 +86,8 @@ def collect_rollouts(env, policy, value_fn, batch_size, gamma, lam, device,
 
     ep_ret = np.zeros(num_envs, dtype=np.float64)
     ep_len = np.zeros(num_envs, dtype=np.int32)
-    ep_vel = [[] for _ in range(num_envs)]
+    ep_velx = [[] for _ in range(num_envs)]
+    ep_vely = [[] for _ in range(num_envs)]
     ep_eng = [[] for _ in range(num_envs)]
 
     total_steps = 0
@@ -123,7 +124,10 @@ def collect_rollouts(env, policy, value_fn, batch_size, gamma, lam, device,
         for i in range(num_envs):
             if "body_vx" in infos:
                 bvx = np.asarray(infos["body_vx"]).ravel()
-                ep_vel[i].append(float(bvx[i]))
+                ep_velx[i].append(float(bvx[i]))
+            if "body_vy" in infos:
+                bvy = np.asarray(infos["body_vy"]).ravel()
+                ep_vely[i].append(float(bvy[i]))
             if "energy" in infos:
                 eng = np.asarray(infos["energy"]).ravel()
                 ep_eng[i].append(float(eng[i]))
@@ -131,8 +135,10 @@ def collect_rollouts(env, policy, value_fn, batch_size, gamma, lam, device,
         for idx in np.nonzero(done)[0]:
             ep_returns.append(float(ep_ret[idx]))
             ep_lengths.append(int(ep_len[idx]))
-            mean_vel = float(np.mean(ep_vel[idx])) if ep_vel[idx] else 0.0
-            ep_velocities.append(mean_vel)
+            mean_velx= float(np.mean(ep_velx[idx])) if ep_velx[idx] else 0.0
+            ep_velocities_x.append(mean_velx)
+            mean_vely= float(np.mean(ep_vely[idx])) if ep_vely[idx] else 0.0
+            ep_velocities_y.append(mean_vely)
             mean_eng = float(np.mean(ep_eng[idx])) if ep_eng[idx] else 0.0
             ep_energies.append(mean_eng)
             survived = not terminated[idx] if hasattr(terminated, '__getitem__') else not terminated
@@ -149,7 +155,8 @@ def collect_rollouts(env, policy, value_fn, batch_size, gamma, lam, device,
 
             ep_ret[idx] = 0.0
             ep_len[idx] = 0.0
-            ep_vel[idx] = []
+            ep_velx[idx] = []
+            ep_vely[idx] = []
             ep_eng[idx] = []
         
         obs_raw = next_obs_raw
@@ -199,7 +206,8 @@ def collect_rollouts(env, policy, value_fn, batch_size, gamma, lam, device,
     stats = {
         "mean_return": np.mean(ep_returns) if ep_returns else 0.0,
         "std_return": np.std(ep_returns) if ep_returns else 0.0,
-        "mean_velocity": np.mean(ep_velocities) if ep_velocities else 0.0,
+        "mean_velocity_x": np.mean(ep_velocities_x) if ep_velocities_x else 0.0,
+        "mean_velocity_y": np.mean(ep_velocities_y) if ep_velocities_y else 0.0,
         "mean_energy": np.mean(ep_energies) if ep_energies else 0.0,
         "survival_rate": np.mean(ep_survivals) if ep_survivals else 0.0,
         "mean_op_len": np.mean(ep_lengths) if ep_lengths else 0.0,
@@ -341,7 +349,8 @@ def train(config_path="training/config.yaml"):
                 "mean_return": mr,
 
                 "std_return": stats["std_return"],
-                "mean_velocity": stats["mean_velocity"],
+                "mean_velocity_x": stats["mean_velocity_x"],
+                "mean_velocity_y": stats["mean_velocity_y"],
                 "mean_energy": stats["mean_energy"],
                 "survival_rate": stats["survival_rate"],
                 "mean_op_len": stats["mean_op_len"],

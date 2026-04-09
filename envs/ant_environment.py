@@ -70,7 +70,7 @@ class VelocityAntEnv(gym.Wrapper):
     W_ENERGY_TORQUE = 0.003
     W_ENERGY_JVEL = 0.0003
     W_SMOOTH = 0.06
-    W_SYMMETRY = 0.8
+    W_SYMMETRY = 0.9
     W_ALIVE = 0.2
     W_STAND_PENALTY=1.0
 
@@ -317,7 +317,8 @@ class VelocityAntEnv(gym.Wrapper):
         wz = obs[18]
 
         roll, pitch, _ = quat_to_rpy(quat)
-        body_vx, body_vy = self._body_frame_velocity(obs)
+        # body_vx, body_vy = self._body_frame_velocity(obs)
+        body_vx, body_vy = obs[13], obs[14]     # Use fedback from body frame. Controller is missing a PID feedback to correct for slip/yaw.
 
         # 1. Velocity Tracking.
         r_forward = self.W_FORWARD * np.exp(-1.0 * (body_vx - self._cmd_vx) ** 2)
@@ -347,7 +348,7 @@ class VelocityAntEnv(gym.Wrapper):
             np.abs(joint_vel[6]) + np.abs(joint_vel[7]),
         ])
         yaw_factor = np.exp(-8.0 * self._cmd_yaw_rate ** 2)
-        r_symmetry = -self.W_SYMMETRY * yaw_factor * np.std(leg_activity)
+        r_symmetry = -self.W_SYMMETRY * np.std(leg_activity)
 
         # 6. Alive Bonus
         r_alive = self.W_ALIVE
@@ -448,7 +449,8 @@ class VelocityAntEnv(gym.Wrapper):
         self._obs_buffer.append(obs.copy())
         delayed_obs = self._obs_buffer[0]
 
-        body_vx, body_vy = self._body_frame_velocity(obs)
+        # body_vx, body_vy = self._body_frame_velocity(obs)
+        body_vx, body_vy = body_vx, body_vy = obs[13], obs[14] 
         wz = obs[18]
 
         info["privileged_obs"] = self._get_privileged_obs()
