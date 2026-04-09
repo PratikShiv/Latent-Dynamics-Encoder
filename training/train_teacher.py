@@ -250,8 +250,8 @@ def train(config_path="training/config.yaml"):
     e_cfg = cfg["env"]
     d_cfg = e_cfg["dynamics"]
 
-    # device = "cuda" if torch.cuda.is_available() else "cpu"
-    device= "cpu"
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    # device= "cpu"
     print(f"Device: {device}")
 
     seed = t_cfg["seed"]
