@@ -62,19 +62,19 @@ class VelocityAntEnv(gym.Wrapper):
     # --------------------------------------------------------------------------------
     # Reward Weights.
     W_FORWARD = 5.0
-    W_LATERAL = 0.0
+    W_LATERAL = -1.0
     W_YAW = 0.0
-    W_VZ = 0.2
+    W_VZ = 0.5
     W_HEIGHT = 0.3
     W_ORIENT = 0.3
     W_ENERGY_TORQUE = 0.003
     W_ENERGY_JVEL = 0.0003
-    W_SMOOTH = 0.02
+    W_SMOOTH = 0.06
     W_SYMMETRY = 0.8
     W_ALIVE = 0.2
-    W_STAND_PENALTY=20.0
+    W_STAND_PENALTY=1.0
 
-    ACTION_FILTER_ALPHA=0.5
+    ACTION_FILTER_ALPHA=0.3
 
     def __init__(
             self,
@@ -354,8 +354,7 @@ class VelocityAntEnv(gym.Wrapper):
 
         # 7. Stand Penalty
         speed_xy = np.sqrt(body_vx**2 + body_vy**2)
-        # r_stand = -self.W_STAND_PENALTY * np.exp(-10.0 * speed_xy)
-        r_stand = 0.0
+        r_stand = -self.W_STAND_PENALTY * np.exp(-10.0 * speed_xy)
 
         # Final Reward
         terms = {

@@ -28,8 +28,8 @@ RED    = "\033[31m"
 CHECKPOINT      = Path("results/teacher_policy.pt")
 EPISODES        = 10
 MAX_STEPS       = 1000
-CMD_VX          = 0.0
-CMD_VY          = 1.0
+CMD_VX          = 1.0
+CMD_VY          = 0.0
 CMD_YAW_RATE    = 0.0
 
 
