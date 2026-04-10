@@ -392,7 +392,7 @@ def train(config_path="training/config.yaml"):
     wandb.finish()
 
     print(f"\nDone. Best mean return {best_reward:.2f}")
-    print("Models saved in {save_dir.resolve()}")
+    print(f"Models saved in {save_dir.resolve()}")
 
     return policy, value_fn
 

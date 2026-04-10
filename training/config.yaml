@@ -1,6 +1,6 @@
 env:
-  num_envs: 18
-  max_episode_steps: 8000
+  num_envs: 11
+  max_episode_steps: 2000
   cmd_vx_range: [0.3, 1.5]        # Forward velocity
   cmd_vy_range: [0.0, 0.0]
   cmd_yaw_rate_range: [0.0, 0.0]  # No yaw.
@@ -21,7 +21,7 @@ teacher:
   entropy_coeff: 0.001
   batch_size: 24576
   minibatch_size: 4096
-  update_epochs: 10
+  update_epochs: 5
   iterations: 8000
   max_grad_norm: 0.5
   seed: 42

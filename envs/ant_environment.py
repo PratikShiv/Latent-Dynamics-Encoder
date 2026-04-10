@@ -44,16 +44,17 @@ class VelocityAntEnv(gym.Wrapper):
     """
     Gymnasium Ant with velocity command conditioning and a natural gait reward.
 
-    Observation layout: [base_obs (27)]
-    Action Space: Unchanged (8 continous torques)
+    Observation layout: [base_obs (27) } cmd (3)] = 30-dim
+    Action Space: Unchanged (8 contiunous torques)
 
-    Walk straight ahead at a fixed speed
+    Velocity tracking is in world fram (Vx only, Vy=0, yaw_rate=0).
 
     Domain Randomization:
     - Total Mass scaling
     - Tangential Friction Scaling
     - Action Transport delay
     - Observation transport delay
+    - External Force Pertubations
     """
 
     HEALTHY_Z_RANGE = (0.3, 1.0)
@@ -62,7 +63,7 @@ class VelocityAntEnv(gym.Wrapper):
     # --------------------------------------------------------------------------------
     # Reward Weights.
     W_FORWARD = 5.0
-    W_LATERAL = -2.0
+    W_LATERAL = 2.0
     W_YAW = 0.0
     W_VZ = 0.5
     W_HEIGHT = 0.3
@@ -207,17 +208,6 @@ class VelocityAntEnv(gym.Wrapper):
     def _append_cmd(self, base_obs):
         cmd = np.array([self._cmd_vx, self._cmd_vy, self._cmd_yaw_rate], dtype=np.float32)
         return np.concatenate([base_obs, cmd])
-    
-    # --------------------------------------------------------------------------------
-    # Body Frame Velocity
-    def _body_frame_velocity(self, obs):
-        quat = obs[1:5]
-        world_vx, world_vy = obs[13], obs[14]
-        _, _, yaw = quat_to_rpy(quat)
-        cos_y, sin_y = np.cos(yaw), np.sin(yaw)
-        body_vx = world_vx * cos_y + world_vy * sin_y
-        body_vy = -world_vx * sin_y + world_vy * cos_y
-        return body_vx, body_vy
 
     # --------------------------------------------------------------------------------
     # Domain Randomization
@@ -482,8 +472,7 @@ class VelocityAntEnv(gym.Wrapper):
         self._obs_buffer.append(obs.copy())
         delayed_obs = self._obs_buffer[0]
 
-        # body_vx, body_vy = self._body_frame_velocity(obs)
-        body_vx, body_vy = body_vx, body_vy = obs[13], obs[14] 
+        body_vx, body_vy = obs[13], obs[14]
         wz = obs[18]
 
         info["privileged_obs"] = self._get_privileged_obs()
