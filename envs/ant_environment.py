@@ -62,7 +62,7 @@ class VelocityAntEnv(gym.Wrapper):
     # --------------------------------------------------------------------------------
     # Reward Weights.
     W_FORWARD = 5.0
-    W_LATERAL = -1.0
+    W_LATERAL = -2.0
     W_YAW = 0.0
     W_VZ = 0.5
     W_HEIGHT = 0.3
@@ -73,6 +73,8 @@ class VelocityAntEnv(gym.Wrapper):
     W_SYMMETRY = 0.9
     W_ALIVE = 0.2
     W_STAND_PENALTY=1.0
+    W_PARTICIPATION = 0.05
+    W_BALANCE = 0.05
 
     ACTION_FILTER_ALPHA=0.3
 
@@ -317,52 +319,83 @@ class VelocityAntEnv(gym.Wrapper):
         wz = obs[18]
 
         roll, pitch, _ = quat_to_rpy(quat)
-        # body_vx, body_vy = self._body_frame_velocity(obs)
-        body_vx, body_vy = obs[13], obs[14]     # Use fedback from body frame. Controller is missing a PID feedback to correct for slip/yaw.
 
-        # 1. Velocity Tracking.
+        body_vx, body_vy = obs[13], obs[14]
+
+        # =========================
+        # 1. Velocity Tracking
+        # =========================
         r_forward = self.W_FORWARD * np.exp(-1.0 * (body_vx - self._cmd_vx) ** 2)
         r_lateral = self.W_LATERAL * np.exp(-8.0 * (body_vy - self._cmd_vy) ** 2)
         r_yaw     = self.W_YAW     * np.exp(-8.0 * (wz - self._cmd_yaw_rate) ** 2)
-        r_vz = -self.W_VZ * vz ** 2 
+        r_vz      = -self.W_VZ * vz ** 2
 
+        # =========================
         # 2. Posture
-        r_height = self.W_HEIGHT *  np.exp(-40.0 * (z - self.TARGET_HEIGHT) **2)
-        r_orient = self.W_ORIENT * np.exp(-5.0 * (roll **2 + pitch **2))
+        # =========================
+        r_height = self.W_HEIGHT * np.exp(-40.0 * (z - self.TARGET_HEIGHT) ** 2)
+        r_orient = self.W_ORIENT * np.exp(-5.0 * (roll**2 + pitch**2))
 
+        # =========================
         # 3. Energy Efficiency
+        # =========================
         r_energy = (
-            -self.W_ENERGY_TORQUE * np.sum(action **2)
-            - self.W_ENERGY_JVEL * np.sum(joint_vel **2)
+            -self.W_ENERGY_TORQUE * np.sum(action ** 2)
+            -self.W_ENERGY_JVEL   * np.sum(joint_vel ** 2)
         )
 
-        # 4. Action Smoothness (Penalise Jerks)
-        r_smooth = -self.W_SMOOTH * np.sum((action - self._prev_action) **2)
+        # =========================
+        # 4. Action Smoothness
+        # =========================
+        r_smooth = -self.W_SMOOTH * np.sum((action - self._prev_action) ** 2)
 
-        # 5. Gait Symmetry: All 4 legs should share work evenly.
-        #       Leg activity = |hip_vel| + |ankle_vel| per leg
+        # =========================
+        # 5. Gait Usage + Symmetry (FIXED)
+        # =========================
         leg_activity = np.array([
             np.abs(joint_vel[0]) + np.abs(joint_vel[1]),
             np.abs(joint_vel[2]) + np.abs(joint_vel[3]),
             np.abs(joint_vel[4]) + np.abs(joint_vel[5]),
             np.abs(joint_vel[6]) + np.abs(joint_vel[7]),
         ])
-        yaw_factor = np.exp(-8.0 * self._cmd_yaw_rate ** 2)
-        r_symmetry = -self.W_SYMMETRY * np.std(leg_activity)
 
+        # Normalize (relative contribution)
+        leg_activity_norm = leg_activity / (np.sum(leg_activity) + 1e-6)
+
+        # --- (A) Participation: penalize inactive legs ---
+        r_participation = -self.W_PARTICIPATION * np.sum(
+            np.exp(-5.0 * leg_activity_norm)
+        )
+
+        # --- (B) Balance: enforce equal sharing ---
+        ideal = np.ones(4) / 4
+        r_balance = -self.W_BALANCE * np.linalg.norm(leg_activity_norm - ideal)
+
+        # --- Motion gating (only when moving) ---
+        speed = np.sqrt(body_vx**2 + body_vy**2)
+        motion_gate = 1 - np.exp(-5.0 * speed)
+
+        r_symmetry = motion_gate * (r_participation + r_balance)
+
+        # =========================
         # 6. Alive Bonus
+        # =========================
         r_alive = self.W_ALIVE
 
+        # =========================
         # 7. Stand Penalty
+        # =========================
         speed_xy = np.sqrt(body_vx**2 + body_vy**2)
         r_stand = -self.W_STAND_PENALTY * np.exp(-10.0 * speed_xy)
 
-        # Final Reward
+        # =========================
+        # Final Sum
+        # =========================
         terms = {
             "r_forward": r_forward,
             "r_lateral": r_lateral,
-            "r_vz": r_vz,
             "r_yaw": r_yaw,
+            "r_vz": r_vz,
             "r_height": r_height,
             "r_orient": r_orient,
             "r_energy": r_energy,
@@ -371,12 +404,12 @@ class VelocityAntEnv(gym.Wrapper):
             "r_alive": r_alive,
             "r_stand": r_stand,
         }
-        total = sum([float(v) for v in terms.values()])
+
+        total = sum(float(v) for v in terms.values())
         terms["total_reward"] = total
         self._reward_terms.append(terms)
 
         return float(total)
-    
     # --------------------------------------------------------------------------------
     # Reward Terms
     def _get_reward_terms(self):
