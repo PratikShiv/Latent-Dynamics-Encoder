@@ -63,7 +63,7 @@ class VelocityAntEnv(gym.Wrapper):
     # --------------------------------------------------------------------------------
     # Reward Weights.
     W_FORWARD = 5.0
-    W_LATERAL = 2.0
+    W_LATERAL = 0.5
     W_YAW = 0.0
     W_VZ = 0.5
     W_HEIGHT = 0.3
