@@ -92,7 +92,7 @@ def comput_gae(rewards, values, dones, last_values, gamma, lam):
 
 def ppo_update(policy, value_fn, batch, *,
                mode: PPOMode = PPOMode.SYMMETRIC,
-               clip_ratio=0.2, entrpoy_coeff=0.01,
+               clip_ratio=0.2, entropy_coeff=0.01,
                pi_optimizer=None, vf_optimizer=None,
                update_epochs=10, minibatch_size=4096,
                max_grad_norm=0.5, device="cpu",
@@ -158,7 +158,7 @@ def ppo_update(policy, value_fn, batch, *,
             surr1 = ratio * mb_adv
             surr2 = ratio.clamp(1 - clip_ratio, 1 + clip_ratio) * mb_adv
             pi_loss = -torch.min(surr1, surr2).mean()
-            pi_loss -= entrpoy_coeff * entropy.mean()
+            pi_loss -= entropy_coeff * entropy.mean()
 
             pi_optimizer.zero_grad()
             pi_loss.backward()

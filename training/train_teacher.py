@@ -329,7 +329,7 @@ def train(config_path="training/config.yaml"):
             policy, value_fn, batch,
             mode=PPOMode.TEACHER,
             clip_ratio=t_cfg["clip_ratio"],
-            entrpoy_coeff=t_cfg["entropy_coeff"],
+            entropy_coeff=t_cfg["entropy_coeff"],
             pi_optimizer=pi_optimizer,
             vf_optimizer=vf_optimizer,
             update_epochs=t_cfg["update_epochs"],

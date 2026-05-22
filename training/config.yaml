@@ -1,5 +1,5 @@
 env:
-  num_envs: 11
+  num_envs: 2
   max_episode_steps: 2000
   cmd_vx_range: [0.3, 1.5]        # Forward velocity
   cmd_vy_range: [0.0, 0.0]
@@ -27,3 +27,21 @@ teacher:
   seed: 42
   save_dir: results
 
+encoder:
+  history_length: 50    # H -- How many past (obs, act) pairs to encode on
+  latent_dim: 8         # d_z -- Size of dynamics embedding
+  hidden_sizes: [256, 256]
+
+student:
+  hidden_sizes: [256, 256]
+
+distillation:
+  lr: 1.0e-3          # Higher LR is fine. This is supervised, not RL
+  z_reg_coeff: 0.01   # Lambda. Loss = MSE + Lamba*||z||^2
+  batch_size: 24576   # Env steps collected per iteration
+  iterations: 800
+
+finetune:
+  lr_actor: 1.0e-4
+  lr_critic: 3.0e-4
+  total_steps: 500000
