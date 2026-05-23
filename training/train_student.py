@@ -448,52 +448,52 @@ def collect_student_rollouts(env, student, encoder, value_fn, batch_size,
 
         obs_raw = next_obs_raw
 
-        # Bootstrap the last value
-        last_obs_norm = obs_rms.normalize(obs_raw).astype(np.float32)
-        last_hist = hist_buf.get_flat_batch()
-        with torch.no_grad():
-            last_z = encoder(torch.as_tensor(last_hist, dtype=torch.float32, device=device))
-            last_values = value_fn(
-                torch.as_tensor(last_obs_norm, dtype=torch.float32, device=device),
-                last_z,
-            ).cpu().numpy().astype(np.float32)
+    # Bootstrap the last value
+    last_obs_norm = obs_rms.normalize(obs_raw).astype(np.float32)
+    last_hist = hist_buf.get_flat_batch()
+    with torch.no_grad():
+        last_z = encoder(torch.as_tensor(last_hist, dtype=torch.float32, device=device))
+        last_values = value_fn(
+            torch.as_tensor(last_obs_norm, dtype=torch.float32, device=device),
+            last_z,
+        ).cpu().numpy().astype(np.float32)
 
-        # GAE Computation
-        rewards_arr = np.asarray(rewards_buf, dtype=np.float32)
-        values_arr = np.asarray(values_buf, dtype=np.float32)
-        dones_arr = np.asarray(dones_buf, dtype=np.float32)
+    # GAE Computation
+    rewards_arr = np.asarray(rewards_buf, dtype=np.float32)
+    values_arr = np.asarray(values_buf, dtype=np.float32)
+    dones_arr = np.asarray(dones_buf, dtype=np.float32)
 
-        advantages, returns = comput_gae(
-            rewards_arr, values_arr, dones_arr, last_values,
-            gamma=gamma, lam=lam,
-        )
+    advantages, returns = comput_gae(
+        rewards_arr, values_arr, dones_arr, last_values,
+        gamma=gamma, lam=lam,
+    )
 
-        # Flatten [T, N, ...] -> [T*N, ...]
-        def flatten(arr, cols):
-            a = np.asarray(arr, dtype=np.float32)
-            return a.reshape(-1, cols) if cols > 0 else a.reshape(-1)
-        
-        latent_dim = encoder.latent_dim
-        batch = {
-            "obs_actor": flatten(obs_buf,obs_dim),
-            "policy_extra_obs": flatten(z_buf, latent_dim),
-            "actions": flatten(action_buf, act_dim),
-            "log_probs": flatten(log_probs_buf, 0),
-            "advantages": flatten(advantages, 0),
-            "returns": flatten(returns, 0),
-        }
+    # Flatten [T, N, ...] -> [T*N, ...]
+    def flatten(arr, cols):
+        a = np.asarray(arr, dtype=np.float32)
+        return a.reshape(-1, cols) if cols > 0 else a.reshape(-1)
+    
+    latent_dim = encoder.latent_dim
+    batch = {
+        "obs_actor": flatten(obs_buf,obs_dim),
+        "policy_extra_obs": flatten(z_buf, latent_dim),
+        "actions": flatten(action_buf, act_dim),
+        "log_probs": flatten(log_probs_buf, 0),
+        "advantages": flatten(advantages, 0),
+        "returns": flatten(returns, 0),
+    }
 
-        stats = {
-            "mean_return": np.mean(ep_returns) if ep_returns else 0.0,
-            "std_return": np.std(ep_returns) if ep_returns else 0.0,
-            "mean_velocity_x": np.mean(ep_velocities_x) if ep_velocities_x else 0.0,
-            "mean_energy": np.mean(ep_energies) if ep_energies else 0.0,
-            "survival_rate": np.mean(ep_survivals) if ep_survivals else 0.0,
-            "mean_ep_len": np.mean(ep_lengths) if ep_lengths else 0.0,
-            "num_episodes": len(ep_returns),
-        }
+    stats = {
+        "mean_return": np.mean(ep_returns) if ep_returns else 0.0,
+        "std_return": np.std(ep_returns) if ep_returns else 0.0,
+        "mean_velocity_x": np.mean(ep_velocities_x) if ep_velocities_x else 0.0,
+        "mean_energy": np.mean(ep_energies) if ep_energies else 0.0,
+        "survival_rate": np.mean(ep_survivals) if ep_survivals else 0.0,
+        "mean_ep_len": np.mean(ep_lengths) if ep_lengths else 0.0,
+        "num_episodes": len(ep_returns),
+    }
 
-        return batch, stats, total_steps
+    return batch, stats, total_steps
     
 
 def finetune(cfg, encoder, student, env, obs_rms, device="cpu"):
@@ -580,7 +580,7 @@ def finetune(cfg, encoder, student, env, obs_rms, device="cpu"):
         # Logging
         print(
             f"[Finetune {it:>4d}]  "
-            f"steps={total_steps:>8d}\{total_steps_target}  "
+            f"steps={total_steps:>8d}/{total_steps_target}  "
             f"return={mr:>8.1f}  "
             f"survival={stats['survival_rate']:.2f}  "
             f"vx={stats['mean_velocity_x']:.3f}  "

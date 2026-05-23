@@ -39,7 +39,7 @@ distillation:
   lr: 1.0e-3          # Higher LR is fine. This is supervised, not RL
   z_reg_coeff: 0.01   # Lambda. Loss = MSE + Lamba*||z||^2
   batch_size: 24576   # Env steps collected per iteration
-  iterations: 800
+  iterations: 300
 
 finetune:
   lr_actor: 1.0e-4

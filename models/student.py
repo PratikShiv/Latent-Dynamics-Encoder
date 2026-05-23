@@ -33,7 +33,7 @@ class StudentPolicy(nn.Module):
 
         # Small initial output
         with torch.no_grad():
-            self.mean_net[-1].weight.data.mul(0.01)
+            self.mean_net[-1].weight.data.mul_(0.01)
             self.mean_net[-1].bias.data.zero_()
 
     def _make_dist(self, obs_z):
