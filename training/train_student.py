@@ -27,6 +27,7 @@ from pathlib import Path
 import gymnasium as gym
 import numpy as np
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import yaml
 
@@ -60,6 +61,54 @@ def load_config(path="training/config.yaml"):
     with open(path) as f:
         return yaml.safe_load(f)
     
+
+# -------------------------------------------------------------------------------
+# Privileged refression head + target normalization
+
+# Without a direct supervisory signal, the encoder has no reason to encode
+# dynamics: the teacher's action depends only on 'obs', so the student can match
+# it by ignoring z. We add a small head that decodes z back to the privileged
+# dynamics vector and train the encoder to *also* satisfy that regression.
+# This gives z a concrete, dynamics-specific learning target
+# -------------------------------------------------------------------------------
+
+class PrivilegedHead(nn.Module):
+    # Linear decoder from latent z -> privileged dynamics vector
+
+    def __init__(self, latent_dim, privileged_dim):
+        super().__init__()
+        self.linear = nn.Linear(latent_dim, privileged_dim)
+
+    def forward(self, z):
+        return self.linear(z)
+    
+def make_priv_scale(dyn_cfg: DynamicsConfig) -> np.ndarray:
+    """
+    Per-dimension scale for the 7-dim privileged_obs vector. Dividing the target
+    by these brings each component into roughly unit range, so the MSE does not
+    get dominated by whichever component happens to have the largest natural magnitude.
+
+    Order matches VelocityAntEnv._get_privileged_obs():
+        [friction_scale, mass_scale, action_delay_norm, obs_delay_norm,
+        force_x, force_y, force_z]
+    """
+
+    fric_max = max(abs(dyn_cfg.friction_range[0]),
+                   abs(dyn_cfg.friction_range[1]), 1e-3)
+    mass_max = max(abs(dyn_cfg.mass_scale_range[0]),
+                   abs(dyn_cfg.mass_scale_range[1]), 1e-3)
+    force_max = max(dyn_cfg.external_force_range[1], 1e-3)
+
+    return np.array([
+        fric_max,
+        mass_max,
+        1.0,        # Action delay norm is already in [0,1]
+        1.0,        # obs_delay_norm is already in [0,1]
+        force_max,
+        force_max,
+        max(force_max * 0.5, 1e-3),
+    ], dtype=np.float32)
+
 
 # -------------------------------------------------------------------------------
 # Env Factory (Same as train_teacher.py)
@@ -190,35 +239,45 @@ class HistoryBuffer:
 # STAGE 1: DISTILLATION
 # -------------------------------------------------------------------------------
 
-def distill(cfg, teacher, obs_rms, encoder, student, env, device="cpu"):
+def distill(cfg, teacher, obs_rms, encoder, student, env, dyn_config, device="cpu"):
     """
-    Supervised imitation: Train encoder + student so the student's actions
-    match the teachers actions.
+    Supervised imitation + Privileged Regression
 
     At each timestep:
-     1. Teacher sees normalized obs -> Produces mean action (frozen target)
-     2. Encoder sees history of last H (obs, action) pairs -> produces z
-     3. Student sees (obs, z) -> produces mean action
-     4. Loss = MSE(student_action, teacher_action) + lamba * ||z||^2
-     5. Back propogate through encoder + student jointly
+     1. Teacher sees normalized obs -> mean action (frozen target).
+     2. Encoder sees history of last H (obs, action) pairs -> z.
+     3. Student sees (obs, z) -> mean action.
+     4. PrivilegedHead sees z -> predicted privileged dynamics.
+     5. Loss = imit_MSE(student_act, teacher_act)
+                + priv_coeff * priv_MSE(priv_pred, priv_target)
+                + z_reg * ||z||^2
+    
+    The privileged regression term is what forces z to encode dynamics.
     """
 
     d_cfg = cfg["distillation"]
-    e_cfg = cfg["env"]
     enc_cfg = cfg["encoder"]
 
     num_envs = env.num_envs
     obs_dim = encoder.obs_dim
     act_dim = encoder.act_dim
     H = enc_cfg["history_length"]
-    z_reg = d_cfg["z_reg_coeff"]
+    z_reg = d_cfg.get("z_reg_coeff", 1e-4)
+    priv_coeff = d_cfg.get("priv_loss_coeff", 1.0)
     iterations = d_cfg["iterations"]
     batch_size = d_cfg["batch_size"]
 
+    privileged_dim = dyn_config.privileged_dim
+    priv_head = PrivilegedHead(encoder.latent_dim, privileged_dim).to(device)
+    priv_scale_np = make_priv_scale(dyn_config)
+    priv_scale_t = torch.as_tensor(priv_scale_np, dtype=torch.float32, device=device)
+
     # Single Optimizer for both encoder and student parameters
     optimizer = torch.optim.Adam(
-        list(encoder.parameters()) + list(student.parameters()),
-        lr = d_cfg["lr"],
+        list(encoder.parameters())
+        + list(student.parameters())
+        + list(priv_head.parameters()),
+        lr=d_cfg["lr"],
     )
 
     # History buffer: one right buffer per enc
@@ -228,20 +287,32 @@ def distill(cfg, teacher, obs_rms, encoder, student, env, device="cpu"):
     print(f"  DISTILLATION - {iterations} iterations")
     print(f"  Encoder: {sum(p.numel() for p in encoder.parameters())} params")
     print(f"  Student: {sum(p.numel() for p in student.parameters())} params")
+    print(f"  PrivHead: {sum(p.numel() for p in priv_head.parameters())} params "
+          f"(latent_dim={encoder.latent_dim} -> priv_dim={privileged_dim})")
     print(f"  History Length: {H}, Latent dim: {encoder.latent_dim}")
+    print(f"  priv_coeff: {priv_coeff}  z_reg_coeff: {z_reg}")
+    print(f"  priv_scale: {priv_scale_np.tolist()}")
     print(f"{'='*60}\n")
 
     # Rollout + Train Loop
-    obs_raw, _infos = env.reset()
+    obs_raw, infos = env.reset()
+
+    # Per-env privilieged dynamics, refreshed on every reset. We track this
+    # ourselves because the vectorized step() infor on done steps may report the
+    # NEW episode's dynamics, which would mislable the LAST step of the old.
+    priv_obs_per_env = np.array(
+        infos["privileged_obs"], dtype=np.float32
+    ).reshape(num_envs, privileged_dim).copy()
+    
     total_steps = 0
 
     for it in range(1, iterations + 1):
         t0 = time.time()
 
-        # Accumulate training samokes: (obs, history, teacher_action)
         obs_buf = []
         hist_flat_buf = []
         teacher_act_buf = []
+        priv_obs_buf = []
 
         steps_this_iter = 0
 
@@ -263,7 +334,7 @@ def distill(cfg, teacher, obs_rms, encoder, student, env, device="cpu"):
             )
 
             # Step the environment with the teacher's actions
-            next_obs_raw, _reward, terminated, truncated, _infos = env.step(action_clipped)
+            next_obs_raw, _reward, terminated, truncated, infos = env.step(action_clipped)
             done = np.logical_or(terminated, truncated)
 
             # Store (obs, action) into per-env history buffers
@@ -275,11 +346,19 @@ def distill(cfg, teacher, obs_rms, encoder, student, env, device="cpu"):
                     obs_buf.append(obs_norm[i])
                     hist_flat_buf.append(hist_buf.get_flat(i))
                     teacher_act_buf.append(teacher_action_np[i])
+                    priv_obs_buf.append(priv_obs_per_env[i].copy())
 
 
-            # Reset history for any env that finished an episode
-            for idx in np.nonzero(done)[0]:
-                hist_buf.reset_env(idx)
+            # Episode Boundaries:
+            done_idx = np.nonzero(done)[0]
+            if done_idx.size > 0:
+                next_priv = np.asarray(
+                    infos["privileged_obs"], dtype=np.float32
+                ).reshape(num_envs, privileged_dim)
+
+                for idx in done_idx:
+                    hist_buf.reset_env(idx)
+                    priv_obs_per_env[idx] = next_priv[idx]
 
             obs_raw = next_obs_raw
             steps_this_iter += num_envs
@@ -296,16 +375,23 @@ def distill(cfg, teacher, obs_rms, encoder, student, env, device="cpu"):
             np.array(teacher_act_buf), dtype=torch.float32, device=device)
         
         # Forward: Encoder produces z from hsitory
+        priv_obs_batch = torch.as_tensor(
+            np.array(priv_obs_buf), dtype=torch.float32, device=device)
+        
         z = encoder(hist_batch)                 # (B, latent_dim)
 
         # Forward: Student produces its action prediction from (obs, z)
         student_action = student.get_mean(obs_batch, z)
+        priv_pred = priv_head(z)
+        priv_target_norm = priv_obs_batch / priv_scale_t
+        priv_pred_norm = priv_pred / priv_scale_t
 
         # Loss: How far the student's actions are from teh teachers'
         # + L2 penalty on z to keep the latent bounded
         imitation_loss = F.mse_loss(student_action, teacher_act_batch)
+        priv_loss = F.mse_loss(priv_pred_norm, priv_target_norm)
         z_reg_loss = z_reg * (z ** 2).mean()
-        loss = imitation_loss + z_reg_loss
+        loss = imitation_loss + priv_coeff * priv_loss + z_reg_loss
 
         # Backprop through encoder + student jointly (teacher is frozen)
         optimizer.zero_grad()
@@ -318,11 +404,21 @@ def distill(cfg, teacher, obs_rms, encoder, student, env, device="cpu"):
         # Logging:
         if it % 10 == 0 or it == 1:
             z_norm = z.detach().norm(dim=-1).mean().item()
+            
+            # Per dimension R^2 on this batch.
+            with torch.no_grad():
+                tgt = priv_obs_batch
+                pred = priv_pred
+                ss_res = ((tgt - pred) ** 2).mean(dim=0)
+                ss_tot = ((tgt - tgt.mean(dim=0, keepdim=True)) ** 2).mean(dim=0) + 1e-8
+                r2 = (1.0 - ss_res / ss_tot).cpu().numpy()
+
             print(
                 f"[Distill {it:>5d}/{iterations}]  "
                 f"imit_loss={imitation_loss.item():.5f}  "
                 f"z_reg={z_reg_loss.item():.5f}  "
                 f"z_norm={z_norm:.3f}  "
+                f"R2[fric={r2[0]:+.2f} mass={r2[1]:+.2f} aDly={r2[2]:+.2f} oDly={r2[3]:+.2f}] "
                 f"samples={len(obs_buf)}  "
                 f"time={dt:.1f}s"
             )
@@ -332,13 +428,14 @@ def distill(cfg, teacher, obs_rms, encoder, student, env, device="cpu"):
                 "iteration": it,
                 "distill/imitation_loss": imitation_loss.item(),
                 "distill/z_reg_loss": z_reg_loss.item(),
+                "distill/priv_loss": priv_loss.item(),
                 "distill/z_norm": z.detach().norm(dim=-1).mean().item(),
                 "distill/total_loss": loss.item(),
                 "distill/num_samples": len(obs_buf),
                 "distill/total_env_steps": total_steps,
             })
 
-    return encoder, student
+    return encoder, student, priv_head, priv_scale_np
 
 
     
@@ -621,7 +718,8 @@ def finetune(cfg, encoder, student, env, obs_rms, device="cpu"):
 
 def save_student_checkpoint(path, encoder, student, value_fn, obs_rms, cfg,
                             pi_optimizer=None, vf_optimizer=None,
-                            iteration=0, total_steps=0, best_reward=0.0):
+                            iteration=0, total_steps=0, best_reward=0.0,
+                            priv_head = None, priv_scale = None):
     """
     Save encoder + student + critic + obs_rms to a single file.
     """
@@ -643,6 +741,11 @@ def save_student_checkpoint(path, encoder, student, value_fn, obs_rms, cfg,
         data["pi_optimizer_state"] = pi_optimizer.state_dict()
     if vf_optimizer is not None:
         data["vf_optimizer"] = vf_optimizer.state_dict()
+    if priv_head is not None:
+        data["priv_head_state"] = priv_head.state_dict()
+    if priv_scale is not None:
+        data["priv_obs_scale"] = np.asarray(priv_scale, dtype=np.float32)
+
     torch.save(data, path)
 
 def load_student_checkpoint(path, obs_dim, act_dim, enc_cfg, stu_cfg, device="cpu"):
@@ -749,14 +852,18 @@ def main():
     save_dir.mkdir(parents=True, exist_ok=True)
 
     # Stage 1: Distillation
+    priv_head = None
+    priv_scale = None
+
     if args.stage in ("distill", "both"):
-        encoder, student = distill(
-            cfg, teacher, obs_rms, encoder, student, env, device)
+        encoder, student, priv_head, priv_scale = distill(
+            cfg, teacher, obs_rms, encoder, student, env, dyn_config, device)
         
         # Save distilled checkpoint (Before fine-tuning)
         save_student_checkpoint(
             save_dir / "student_distilled.pt",
             encoder, student, value_fn=None, obs_rms=obs_rms, cfg=cfg,
+            priv_head=priv_head, priv_scale=priv_scale,
         )
         print(f"Distilled model saved to {save_dir / 'student_distilled.pt'}")
 
@@ -764,9 +871,19 @@ def main():
     if args.stage == "finetune":
         distilled_path = save_dir / "student_distilled.pt"
         print(f"Loading distilled model from {distilled_path}")
-        encoder, student, _ = load_student_checkpoint(
+        encoder, student, distilled_ckpt = load_student_checkpoint(
             distilled_path, obs_dim, act_dim, enc_cfg, stu_cfg, device)
         
+        # Carry forward the privileged head / scale if the distilled checkpoint
+        # has them, so they end up in student_finetuned.pt as well
+        if "priv_head_state" in distilled_ckpt:
+            priv_head = PrivilegedHead(
+                encoder.latent_dim, dyn_config.privileged_dim
+            ).to(device)
+            priv_head.load_state_dict(distilled_ckpt["priv_head_state"])
+        if "priv_obs_scale" in distilled_ckpt:
+            priv_scale = np.asarray(distilled_ckpt["priv_obs_scale"], dtype=np.float32)
+
     # Sage 2: RL finetuning
     if args.stage in ("finetune", "both"):
         encoder, student, value_fn = finetune(
@@ -775,6 +892,7 @@ def main():
         save_student_checkpoint(
             save_dir / "student_finetuned.pt",
             encoder, student, value_fn, obs_rms, cfg,
+            priv_head=priv_head, priv_scale=priv_scale,
         )
         print(f"Fine-tuned model saved to {save_dir / 'student_finetuned.pt'}")
 

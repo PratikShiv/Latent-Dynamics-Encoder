@@ -31,7 +31,6 @@ class AdaptationEncoder(nn.Module):
         self.net = build_mlp(input_dim, latent_dim, hidden_size)
         # Small initial output so z starts near 0
         with torch.no_grad():
-            self.net[-1].weight.data.mul_(0.01)
             self.net[-1].bias.data.zero_()
 
     def forward(self, history_flat):
