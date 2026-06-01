@@ -63,7 +63,7 @@ def load_config(path="training/config.yaml"):
     
 
 # -------------------------------------------------------------------------------
-# Privileged refression head + target normalization
+# Privileged regression head + target normalization
 
 # Without a direct supervisory signal, the encoder has no reason to encode
 # dynamics: the teacher's action depends only on 'obs', so the student can match
@@ -297,9 +297,9 @@ def distill(cfg, teacher, obs_rms, encoder, student, env, dyn_config, device="cp
     # Rollout + Train Loop
     obs_raw, infos = env.reset()
 
-    # Per-env privilieged dynamics, refreshed on every reset. We track this
-    # ourselves because the vectorized step() infor on done steps may report the
-    # NEW episode's dynamics, which would mislable the LAST step of the old.
+    # Per-env privileged dynamics, refreshed on every reset. We track this
+    # ourselves because the vectorized step() info on done steps may report the
+    # NEW episode's dynamics, which would mislabel the LAST step of the old.
     priv_obs_per_env = np.array(
         infos["privileged_obs"], dtype=np.float32
     ).reshape(num_envs, privileged_dim).copy()
