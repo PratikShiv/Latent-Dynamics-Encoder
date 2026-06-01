@@ -305,14 +305,18 @@ def main():
 
     # 4. Non-Linear Probing
     print("Linear Probing (z -> dynamics):")
-    fr_tr, fr_te = nonlinear_probe(Z, friction, groups, "friction_scale", seed=SEED)
-    ms_tr, ms_te = nonlinear_probe(Z, mass, groups, "mass_scale", seed=SEED)
+    fr_tr_nl, fr_te_nl = nonlinear_probe(Z, friction, groups, "friction_scale", seed=SEED)
+    ms_tr_nl, ms_te_nl = nonlinear_probe(Z, mass, groups, "mass_scale", seed=SEED)
 
     summary_path = OUTPUT_DIR / "linear_probe_summary.txt"
     with open(summary_path, "w") as f:
         f.write("Linear Probe (z -> dynamics), group-aware 80/20 split.\n\n")
         f.write(f"friction_scale  R^2_train={fr_tr:.4f}  R^2_test={fr_te:.4f}\n")
-        f.write(f"mass_scale  R^2_train={ms_tr:.4f}  R^2_test={ms_te:.4f}\n")
+        f.write(f"mass_scale  R^2_train={ms_tr:.4f}  R^2_test={ms_te:.4f}\n\n\n")
+
+        f.write("Non-Linear Probe (z -> dynamics), group-aware 80/20 split.\n\n")
+        f.write(f"friction_scale  R^2_train={fr_tr_nl:.4f}  R^2_test={fr_te_nl:.4f}\n")
+        f.write(f"mass_scale  R^2_train={ms_tr_nl:.4f}  R^2_test={ms_te_nl:.4f}\n")
     print(f"  summary -> {summary_path}")
 
 if __name__ == "__main__":
