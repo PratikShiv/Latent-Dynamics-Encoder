@@ -269,7 +269,7 @@ def distill(cfg, teacher, obs_rms, encoder, student, env, dyn_config, device="cp
     inner_epochs = d_cfg["inner_epochs"]
 
     privileged_dim = dyn_config.privileged_dim
-    priv_dim_w = d_cfg.get("priv_dim_weights", 1.0 * privileged_dim)
+    priv_dim_w = d_cfg.get("priv_dim_weights", [1.0] * privileged_dim)
     priv_dim_w_t = torch.as_tensor(priv_dim_w, dtype=torch.float32, device=device)
 
     priv_head = PrivilegedHead(encoder.latent_dim, privileged_dim).to(device)

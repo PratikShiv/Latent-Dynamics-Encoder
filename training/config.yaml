@@ -29,20 +29,20 @@ teacher:
 
 encoder:
   history_length: 50    # H -- How many past (obs, act) pairs to encode on
-  latent_dim: 8         # d_z -- Size of dynamics embedding
+  latent_dim: 16         # d_z -- Size of dynamics embedding
   hidden_sizes: [256, 256]
 
 student:
   hidden_sizes: [256, 256]
 
 distillation:
-  lr: 3.0e-3             # Higher LR is fine. This is supervised, not RL
+  lr: 3.0e-4             # Higher LR is fine. This is supervised, not RL
   z_reg_coeff: 1.0e-4    # Lambda. Loss = MSE + Lamba*||z||^2
   priv_loss_coeff: 2.0   # Weight of the z -> privileged dynamics regression
   batch_size: 24576      # Env steps collected per iteration
   iterations: 600
   inner_epochs: 2
-  priv_dim_weights: [1.0, 5.0, 1.0, 1.0, 0.5, 0.5, 0.3]
+  priv_dim_weights: [1.0, 3.0, 1.0, 1.0, 0.5, 0.5, 0.3]
 
 finetune:
   lr_actor: 1.0e-4
