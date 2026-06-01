@@ -27,6 +27,7 @@ import umap
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 from sklearn.model_selection import GroupShuffleSplit
+from sklearn.neural_network import MLPRegressor
 
 from envs.ant_environment import VelocityAntEnv
 from envs.dynamics_config import DynamicsConfig
@@ -207,6 +208,22 @@ def linear_probe(Z, target, groups, label, seed=0):
     
     return r2_tr, r2_te
     
+def nonlinear_probe(Z, target, groups, label, seed=0):
+    # Split the data in 80/20
+    splitter = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=seed)
+    train_idx, test_idx = next(splitter.split(Z, target, groups))
+
+    model = MLPRegressor(
+        hidden_layer_sizes=(64, 64), max_iter=2000, random_state=seed)
+    
+    model.fit(Z[train_idx], target[train_idx])
+    r2_tr = r2_score(target[train_idx], model.predict(Z[train_idx]))
+    r2_te = r2_score(target[test_idx], model.predict(Z[test_idx]))
+
+    print(f" [MLP] {label:>16s}: R^2_train={r2_tr:6.3f}   R^2_test={r2_te:6.3f}  "
+          f"(n_train={len(train_idx)}, n_test={len(test_idx)})")
+    
+    return r2_tr, r2_te
 
 # -------------------------------------------------------
 # Main Loop
@@ -285,6 +302,11 @@ def main():
     print("Linear Probing (z -> dynamics):")
     fr_tr, fr_te = linear_probe(Z, friction, groups, "friction_scale", seed=SEED)
     ms_tr, ms_te = linear_probe(Z, mass, groups, "mass_scale", seed=SEED)
+
+    # 4. Non-Linear Probing
+    print("Linear Probing (z -> dynamics):")
+    fr_tr, fr_te = nonlinear_probe(Z, friction, groups, "friction_scale", seed=SEED)
+    ms_tr, ms_te = nonlinear_probe(Z, mass, groups, "mass_scale", seed=SEED)
 
     summary_path = OUTPUT_DIR / "linear_probe_summary.txt"
     with open(summary_path, "w") as f:

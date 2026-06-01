@@ -269,6 +269,9 @@ def distill(cfg, teacher, obs_rms, encoder, student, env, dyn_config, device="cp
     inner_epochs = d_cfg["inner_epochs"]
 
     privileged_dim = dyn_config.privileged_dim
+    priv_dim_w = d_cfg.get("priv_dim_weights", 1.0 * privileged_dim)
+    priv_dim_w_t = torch.as_tensor(priv_dim_w, dtype=torch.float32, device=device)
+
     priv_head = PrivilegedHead(encoder.latent_dim, privileged_dim).to(device)
     priv_scale_np = make_priv_scale(dyn_config)
     priv_scale_t = torch.as_tensor(priv_scale_np, dtype=torch.float32, device=device)
@@ -391,7 +394,8 @@ def distill(cfg, teacher, obs_rms, encoder, student, env, dyn_config, device="cp
             # Loss: How far the student's actions are from teh teachers'
             # + L2 penalty on z to keep the latent bounded
             imitation_loss = F.mse_loss(student_action, teacher_act_batch)
-            priv_loss = F.mse_loss(priv_pred_norm, priv_target_norm)
+            sq_err = (priv_pred_norm - priv_target_norm) ** 2
+            priv_loss = (sq_err * priv_dim_w_t).mean()
             z_reg_loss = z_reg * (z ** 2).mean()
             loss = imitation_loss + priv_coeff * priv_loss + z_reg_loss
 
