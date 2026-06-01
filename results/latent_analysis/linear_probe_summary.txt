@@ -1,4 +1,4 @@
 Linear Probe (z -> dynamics), group-aware 80/20 split.
 
-friction_scale  R^2_train=0.0479  R^2_test=0.0555
-mass_scale  R^2_train=0.0719  R^2_test=-0.1347
+friction_scale  R^2_train=0.0395  R^2_test=0.0109
+mass_scale  R^2_train=0.0109  R^2_test=-0.0065

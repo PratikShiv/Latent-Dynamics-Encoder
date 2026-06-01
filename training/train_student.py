@@ -266,6 +266,7 @@ def distill(cfg, teacher, obs_rms, encoder, student, env, dyn_config, device="cp
     priv_coeff = d_cfg.get("priv_loss_coeff", 1.0)
     iterations = d_cfg["iterations"]
     batch_size = d_cfg["batch_size"]
+    inner_epochs = d_cfg["inner_epochs"]
 
     privileged_dim = dyn_config.privileged_dim
     priv_head = PrivilegedHead(encoder.latent_dim, privileged_dim).to(device)
@@ -378,25 +379,26 @@ def distill(cfg, teacher, obs_rms, encoder, student, env, dyn_config, device="cp
         priv_obs_batch = torch.as_tensor(
             np.array(priv_obs_buf), dtype=torch.float32, device=device)
         
-        z = encoder(hist_batch)                 # (B, latent_dim)
+        for _ in range(inner_epochs):
+            z = encoder(hist_batch)                 # (B, latent_dim)
 
-        # Forward: Student produces its action prediction from (obs, z)
-        student_action = student.get_mean(obs_batch, z)
-        priv_pred = priv_head(z)
-        priv_target_norm = priv_obs_batch / priv_scale_t
-        priv_pred_norm = priv_pred / priv_scale_t
+            # Forward: Student produces its action prediction from (obs, z)
+            student_action = student.get_mean(obs_batch, z)
+            priv_pred = priv_head(z)
+            priv_target_norm = priv_obs_batch / priv_scale_t
+            priv_pred_norm = priv_pred / priv_scale_t
 
-        # Loss: How far the student's actions are from teh teachers'
-        # + L2 penalty on z to keep the latent bounded
-        imitation_loss = F.mse_loss(student_action, teacher_act_batch)
-        priv_loss = F.mse_loss(priv_pred_norm, priv_target_norm)
-        z_reg_loss = z_reg * (z ** 2).mean()
-        loss = imitation_loss + priv_coeff * priv_loss + z_reg_loss
+            # Loss: How far the student's actions are from teh teachers'
+            # + L2 penalty on z to keep the latent bounded
+            imitation_loss = F.mse_loss(student_action, teacher_act_batch)
+            priv_loss = F.mse_loss(priv_pred_norm, priv_target_norm)
+            z_reg_loss = z_reg * (z ** 2).mean()
+            loss = imitation_loss + priv_coeff * priv_loss + z_reg_loss
 
-        # Backprop through encoder + student jointly (teacher is frozen)
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+            # Backprop through encoder + student jointly (teacher is frozen)
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
 
         dt = time.time() - t0
         
@@ -433,6 +435,10 @@ def distill(cfg, teacher, obs_rms, encoder, student, env, dyn_config, device="cp
                 "distill/total_loss": loss.item(),
                 "distill/num_samples": len(obs_buf),
                 "distill/total_env_steps": total_steps,
+                "distill/r2_fric": r2[0],
+                "distill/r2_mass": r2[1],
+                "distill/r2_aDly": r2[2],
+                "distill/r2_aDlx": r2[3],
             })
 
     return encoder, student, priv_head, priv_scale_np

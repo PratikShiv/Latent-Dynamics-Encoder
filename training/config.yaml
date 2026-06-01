@@ -38,9 +38,10 @@ student:
 distillation:
   lr: 1.0e-3             # Higher LR is fine. This is supervised, not RL
   z_reg_coeff: 1.0e-4    # Lambda. Loss = MSE + Lamba*||z||^2
-  priv_loss_coeff: 1.0   # Weight of the z -> privileged dynamics regression
+  priv_loss_coeff: 2.0   # Weight of the z -> privileged dynamics regression
   batch_size: 24576      # Env steps collected per iteration
-  iterations: 300
+  iterations: 1000
+  inner_epochs: 5
 
 finetune:
   lr_actor: 1.0e-4
